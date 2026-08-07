@@ -1,307 +1,271 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-interface Ingredient {
-  name: string;
-  amount: string;
+interface Meal {
+  idMeal: string;
+  strMeal: string;
+  strCategory: string;
+  strMealThumb: string;
+  strInstructions?: string;
 }
-
-interface Recipe {
-  id: string;
-  name: string;
-  category: string;
-  ingredients: Ingredient[];
-}
-
-interface DayPlan {
-  dayName: string;
-  breakfastId: string;
-  lunchId: string;
-  dinnerId: string;
-}
-
-const INITIAL_RECIPES: Recipe[] = [
-  {
-    id: '1',
-    name: 'Scrambled Eggs & Toast',
-    category: 'Breakfast',
-    ingredients: [
-      { name: 'Eggs', amount: '3' },
-      { name: 'Bread', amount: '2 slices' },
-      { name: 'Butter', amount: '1 tbsp' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Oatmeal & Fruit',
-    category: 'Breakfast',
-    ingredients: [
-      { name: 'Oats', amount: '1 cup' },
-      { name: 'Milk', amount: '1 cup' },
-      { name: 'Berries', amount: '1/2 cup' },
-    ],
-  },
-  {
-    id: '3',
-    name: 'Grilled Chicken Salad',
-    category: 'Lunch',
-    ingredients: [
-      { name: 'Chicken Breast', amount: '1 lb' },
-      { name: 'Mixed Greens', amount: '1 bag' },
-      { name: 'Salad Dressing', amount: '2 tbsp' },
-    ],
-  },
-  {
-    id: '4',
-    name: 'Turkey Wrap',
-    category: 'Lunch',
-    ingredients: [
-      { name: 'Tortilla Wraps', amount: '1 pack' },
-      { name: 'Deli Turkey', amount: '1/2 lb' },
-      { name: 'Cheese Slices', amount: '4 slices' },
-    ],
-  },
-  {
-    id: '5',
-    name: 'Beef Tacos',
-    category: 'Dinner',
-    ingredients: [
-      { name: 'Ground Beef', amount: '1 lb' },
-      { name: 'Taco Shells', amount: '1 box' },
-      { name: 'Shredded Cheese', amount: '1 cup' },
-      { name: 'Salsa', amount: '1 jar' },
-    ],
-  },
-  {
-    id: '6',
-    name: 'Salmon with Asparagus',
-    category: 'Dinner',
-    ingredients: [
-      { name: 'Salmon Fillets', amount: '2' },
-      { name: 'Fresh Asparagus', amount: '1 bunch' },
-      { name: 'Olive Oil', amount: '2 tbsp' },
-    ],
-  },
-];
-
-const DAYS_OF_WEEK = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'calendar' | 'search' | 'shopping'>('calendar');
-  const [recipes] = useState<Recipe[]>(INITIAL_RECIPES);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'search' | 'saved' | 'shopping'>('calendar');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Meal[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savedRecipes, setSavedRecipes] = useState<Meal[]>([]);
 
-  // Weekly plan initialized Sunday through Saturday
-  const [weeklyPlan, setWeeklyPlan] = useState<DayPlan[]>(
-    DAYS_OF_WEEK.map((day) => ({
-      dayName: day,
-      breakfastId: '',
-      lunchId: '',
-      dinnerId: '',
-    }))
-  );
-
-  const handleSelectMeal = (
-    dayName: string,
-    mealType: 'breakfastId' | 'lunchId' | 'dinnerId',
-    recipeId: string
-  ) => {
-    setWeeklyPlan((prev) =>
-      prev.map((item) =>
-        item.dayName === dayName ? { ...item, [mealType]: recipeId } : item
-      )
-    );
-  };
-
-  // Filter recipes based on user search input
-  const filteredRecipes = recipes.filter(
-    (r) =>
-      r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Compile full shopping list from selected calendar meals
-  const selectedRecipeIds = weeklyPlan
-    .flatMap((d) => [d.breakfastId, d.lunchId, d.dinnerId])
-    .filter(Boolean);
-
-  const shoppingList: { [key: string]: string[] } = {};
-  selectedRecipeIds.forEach((id) => {
-    const recipe = recipes.find((r) => r.id === id);
-    if (recipe) {
-      recipe.ingredients.forEach((ing) => {
-        if (!shoppingList[ing.name]) {
-          shoppingList[ing.name] = [];
-        }
-        shoppingList[ing.name].push(ing.amount);
-      });
-    }
+  // Weekly Planner State
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const [weeklyPlan, setWeeklyPlan] = useState<Record<string, { breakfast: string; lunch: string; dinner: string }>>({
+    Sunday: { breakfast: '', lunch: '', dinner: '' },
+    Monday: { breakfast: '', lunch: '', dinner: '' },
+    Tuesday: { breakfast: '', lunch: '', dinner: '' },
+    Wednesday: { breakfast: '', lunch: '', dinner: '' },
+    Thursday: { breakfast: '', lunch: '', dinner: '' },
+    Friday: { breakfast: '', lunch: '', dinner: '' },
+    Saturday: { breakfast: '', lunch: '', dinner: '' },
   });
 
+  // Debounced search fetching from online API
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(searchQuery)}`);
+        const data = await res.json();
+        setSearchResults(data.meals || []);
+      } catch (err) {
+        console.error('Error fetching recipes:', err);
+      } finally {
+        setLoading(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const toggleSaveRecipe = (meal: Meal) => {
+    if (savedRecipes.some((r) => r.idMeal === meal.idMeal)) {
+      setSavedRecipes(savedRecipes.filter((r) => r.idMeal !== meal.idMeal));
+    } else {
+      setSavedRecipes([...savedRecipes, meal]);
+    }
+  };
+
+  const handleMealChange = (day: string, mealType: 'breakfast' | 'lunch' | 'dinner', value: string) => {
+    setWeeklyPlan((prev) => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        [mealType]: value,
+      },
+    }));
+  };
+
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif', maxWidth: '1000px', margin: '0 auto', backgroundColor: '#fff', color: '#222' }}>
-      <header style={{ borderBottom: '2px solid #e2e8f0', paddingBottom: '15px', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0, color: '#1a365d' }}>Chavez Meal Prep</h1>
-        
-        {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-          <button
-            onClick={() => setActiveTab('calendar')}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              backgroundColor: activeTab === 'calendar' ? '#1a365d' : '#e2e8f0',
-              color: activeTab === 'calendar' ? '#fff' : '#333',
-            }}
-          >
-            Calendar
-          </button>
-          <button
-            onClick={() => setActiveTab('search')}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              backgroundColor: activeTab === 'search' ? '#1a365d' : '#e2e8f0',
-              color: activeTab === 'search' ? '#fff' : '#333',
-            }}
-          >
-            Search Recipes
-          </button>
-          <button
-            onClick={() => setActiveTab('shopping')}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '6px',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              backgroundColor: activeTab === 'shopping' ? '#1a365d' : '#e2e8f0',
-              color: activeTab === 'shopping' ? '#fff' : '#333',
-            }}
-          >
-            Shopping List ({Object.keys(shoppingList).length})
-          </button>
-        </nav>
-      </header>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '16px', fontFamily: 'sans-serif', color: '#1e293b' }}>
+      <h1 style={{ textAlign: 'center', color: '#1e3a8a', fontSize: '28px', marginBottom: '20px' }}>Chavez Meal Prep</h1>
 
-      {/* TAB 1: CALENDAR VIEW */}
+      {/* Navigation Tabs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '24px' }}>
+        <button
+          onClick={() => setActiveTab('calendar')}
+          style={{
+            padding: '10px 4px',
+            borderRadius: '6px',
+            border: 'none',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'calendar' ? '#1e3a8a' : '#e2e8f0',
+            color: activeTab === 'calendar' ? '#fff' : '#334155',
+          }}
+        >
+          Calendar
+        </button>
+        <button
+          onClick={() => setActiveTab('search')}
+          style={{
+            padding: '10px 4px',
+            borderRadius: '6px',
+            border: 'none',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'search' ? '#1e3a8a' : '#e2e8f0',
+            color: activeTab === 'search' ? '#fff' : '#334155',
+          }}
+        >
+          Search Online
+        </button>
+        <button
+          onClick={() => setActiveTab('saved')}
+          style={{
+            padding: '10px 4px',
+            borderRadius: '6px',
+            border: 'none',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'saved' ? '#1e3a8a' : '#e2e8f0',
+            color: activeTab === 'saved' ? '#fff' : '#334155',
+          }}
+        >
+          Saved ({savedRecipes.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('shopping')}
+          style={{
+            padding: '10px 4px',
+            borderRadius: '6px',
+            border: 'none',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'shopping' ? '#1e3a8a' : '#e2e8f0',
+            color: activeTab === 'shopping' ? '#fff' : '#334155',
+          }}
+        >
+          Shopping List
+        </button>
+      </div>
+
+      {/* Tab 1: Calendar */}
       {activeTab === 'calendar' && (
-        <section>
-          <h2>Weekly Planner (Sun – Sat)</h2>
-          <p style={{ color: '#666' }}>Select meals for each day to automatically populate your shopping list.</p>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginTop: '15px' }}>
-            {weeklyPlan.map((day) => (
-              <div key={day.dayName} style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '10px', backgroundColor: '#f8fafc' }}>
-                <strong style={{ display: 'block', textAlign: 'center', marginBottom: '8px', color: '#0f172a' }}>{day.dayName}</strong>
-
-                <div style={{ marginBottom: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75em', fontWeight: 'bold' }}>Breakfast</label>
-                  <select
-                    value={day.breakfastId}
-                    onChange={(e) => handleSelectMeal(day.dayName, 'breakfastId', e.target.value)}
-                    style={{ width: '100%', padding: '4px', fontSize: '0.8em' }}
-                  >
-                    <option value="">-- None --</option>
-                    {recipes.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ marginBottom: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '0.75em', fontWeight: 'bold' }}>Lunch</label>
-                  <select
-                    value={day.lunchId}
-                    onChange={(e) => handleSelectMeal(day.dayName, 'lunchId', e.target.value)}
-                    style={{ width: '100%', padding: '4px', fontSize: '0.8em' }}
-                  >
-                    <option value="">-- None --</option>
-                    {recipes.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.75em', fontWeight: 'bold' }}>Dinner</label>
-                  <select
-                    value={day.dinnerId}
-                    onChange={(e) => handleSelectMeal(day.dayName, 'dinnerId', e.target.value)}
-                    style={{ width: '100%', padding: '4px', fontSize: '0.8em' }}
-                  >
-                    <option value="">-- None --</option>
-                    {recipes.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
+        <div>
+          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#1e3a8a' }}>Weekly Planner</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+            {days.map((day) => (
+              <div key={day} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', backgroundColor: '#f8fafc' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#0f172a', textAlign: 'center' }}>{day}</h3>
+                {(['breakfast', 'lunch', 'dinner'] as const).map((mealType) => (
+                  <div key={mealType} style={{ marginBottom: '8px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', textTransform: 'capitalize', fontWeight: 'bold', marginBottom: '2px' }}>
+                      {mealType}
+                    </label>
+                    <select
+                      value={weeklyPlan[day][mealType]}
+                      onChange={(e) => handleMealChange(day, mealType, e.target.value)}
+                      style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #94a3b8' }}
+                    >
+                      <option value="">-- Select Saved Recipe --</option>
+                      {savedRecipes.map((meal) => (
+                        <option key={meal.idMeal} value={meal.strMeal}>
+                          {meal.strMeal}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        </section>
+        </div>
       )}
 
-      {/* TAB 2: SEARCH RECIPES VIEW */}
+      {/* Tab 2: Online Recipe Search */}
       {activeTab === 'search' && (
-        <section>
-          <h2>Search Recipes</h2>
+        <div>
+          <h2 style={{ fontSize: '20px', marginBottom: '12px', color: '#1e3a8a' }}>Search Internet Recipes</h2>
           <input
             type="text"
-            placeholder="Search by recipe name or category (e.g. Dinner, Breakfast)..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: '100%', padding: '10px', marginBottom: '20px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+            placeholder="Type a meal or ingredient (e.g., Chicken, Pasta, Taco)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #94a3b8', marginBottom: '16px', boxSizing: 'border-box' }}
           />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-            {filteredRecipes.map((recipe) => (
-              <div key={recipe.id} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '15px', backgroundColor: '#fff' }}>
-                <h3 style={{ margin: '0 0 5px 0', color: '#1e293b' }}>{recipe.name}</h3>
-                <span style={{ fontSize: '0.8em', backgroundColor: '#e2e8f0', padding: '2px 8px', borderRadius: '4px', color: '#475569' }}>
-                  {recipe.category}
-                </span>
-                <h4 style={{ margin: '10px 0 5px 0', fontSize: '0.9em' }}>Ingredients:</h4>
-                <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85em', color: '#475569' }}>
-                  {recipe.ingredients.map((ing, i) => (
-                    <li key={i}>{ing.amount} {ing.name}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+
+          {loading && <p style={{ color: '#64748b' }}>Searching web database...</p>}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+            {searchResults.map((meal) => {
+              const isSaved = savedRecipes.some((r) => r.idMeal === meal.idMeal);
+              return (
+                <div key={meal.idMeal} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                  <img src={meal.strMealThumb} alt={meal.strMeal} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '6px', marginBottom: '8px' }} />
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{meal.strMeal}</h3>
+                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>{meal.strCategory}</p>
+                  <button
+                    onClick={() => toggleSaveRecipe(meal)}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      backgroundColor: isSaved ? '#ef4444' : '#16a34a',
+                      color: '#fff',
+                    }}
+                  >
+                    {isSaved ? 'Remove Favorite' : 'Save to Favorites'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        </section>
+        </div>
       )}
 
-      {/* TAB 3: SHOPPING LIST VIEW */}
-      {activeTab === 'shopping' && (
-        <section style={{ backgroundColor: '#fffbe0', padding: '20px', borderRadius: '8px', border: '1px solid #fef08a' }}>
-          <h2 style={{ margin: '0 0 10px 0', color: '#713f12' }}>Shopping List</h2>
-          {Object.keys(shoppingList).length === 0 ? (
-            <p style={{ color: '#854d0e' }}>Your shopping list is currently empty. Go to the **Calendar** tab and select meals to generate your items.</p>
+      {/* Tab 3: Saved Favorites */}
+      {activeTab === 'saved' && (
+        <div>
+          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#1e3a8a' }}>Saved Recipes</h2>
+          {savedRecipes.length === 0 ? (
+            <p style={{ color: '#64748b' }}>No saved recipes yet. Switch to "Search Online" to find and save recipes!</p>
           ) : (
-            <ul style={{ fontSize: '1.05em', lineHeight: '1.6' }}>
-              {Object.entries(shoppingList).map(([ingredient, amounts]) => (
-                <li key={ingredient}>
-                  <strong>{ingredient}</strong> — ({amounts.join(' + ')})
-                </li>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+              {savedRecipes.map((meal) => (
+                <div key={meal.idMeal} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', backgroundColor: '#fff' }}>
+                  <img src={meal.strMealThumb} alt={meal.strMeal} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '6px', marginBottom: '8px' }} />
+                  <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{meal.strMeal}</h3>
+                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>{meal.strCategory}</p>
+                  <button
+                    onClick={() => toggleSaveRecipe(meal)}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      backgroundColor: '#ef4444',
+                      color: '#fff',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
-        </section>
+        </div>
+      )}
+
+      {/* Tab 4: Shopping List */}
+      {activeTab === 'shopping' && (
+        <div>
+          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#1e3a8a' }}>Shopping List</h2>
+          <p style={{ color: '#64748b' }}>Meals currently on your calendar schedule:</p>
+          <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
+            {Object.entries(weeklyPlan).flatMap(([day, meals]) =>
+              Object.entries(meals)
+                .filter(([_, mealName]) => mealName !== '')
+                .map(([type, mealName], idx) => (
+                  <li key={`${day}-${type}-${idx}`}>
+                    <strong>{day} ({type}):</strong> {mealName}
+                  </li>
+                ))
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );
-}
+  }
