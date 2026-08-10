@@ -1,412 +1,273 @@
 import React, { useState, useEffect } from 'react';
 
-interface Meal {
-  idMeal: string;
-  strMeal: string;
-  strCategory: string;
-  strMealThumb?: string;
-  strInstructions?: string;
-  ingredients?: string;
-  isCustom?: boolean;
+// --- TYPES ---
+interface Recipe {
+  id: string;
+  name: string;
+  category: string;
+  ingredients: string[];
+  instructions?: string;
 }
+
+interface CalendarEntry {
+  day: string; // e.g., 'Monday'
+  mealType: 'breakfast' | 'lunch' | 'dinner';
+  recipeId: string;
+}
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MEAL_TYPES: ('breakfast' | 'lunch' | 'dinner')[] = ['breakfast', 'lunch', 'dinner'];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'search' | 'saved' | 'shopping'>('calendar');
+  
+  // App State with LocalStorage
+  const [savedRecipes, setSavedRecipes] = useState<Recipe[]>(() => {
+    const saved = localStorage.getItem('chavez_saved_recipes');
+    return saved ? JSON.parse(saved) : [
+      { id: '1', name: 'Breakfast Potatoes', category: 'Breakfast', ingredients: ['4 Russet Potatoes', '1 Bell Pepper', '1/2 Onion', '2 tbsp Olive Oil', 'Paprika', 'Salt & Pepper'] },
+      { id: '2', name: 'Grilled Chicken Salad', category: 'Lunch', ingredients: ['2 Chicken Breasts', '4 cups Mixed Greens', '1/2 cup Cherry Tomatoes', '1/4 cup Feta Cheese', 'Balsamic Vinaigrette'] }
+    ];
+  });
+
+  const [calendar, setCalendar] = useState<CalendarEntry[]>(() => {
+    const saved = localStorage.getItem('chavez_calendar');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Online Search States
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Meal[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<Recipe[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Load saved recipes from localStorage
-  const [savedRecipes, setSavedRecipes] = useState<Meal[]>(() => {
-    const localData = localStorage.getItem('chavez_saved_recipes');
-    return localData ? JSON.parse(localData) : [];
-  });
-
-  // Custom Recipe Form State
-  const [showForm, setShowForm] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customCategory, setCustomCategory] = useState('Custom / Favorite');
-  const [customIngredients, setCustomIngredients] = useState('');
-  const [customInstructions, setCustomInstructions] = useState('');
-
-  // Weekly Planner State
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const [weeklyPlan, setWeeklyPlan] = useState<Record<string, { breakfast: string; lunch: string; dinner: string }>>({
-    Sunday: { breakfast: '', lunch: '', dinner: '' },
-    Monday: { breakfast: '', lunch: '', dinner: '' },
-    Tuesday: { breakfast: '', lunch: '', dinner: '' },
-    Wednesday: { breakfast: '', lunch: '', dinner: '' },
-    Thursday: { breakfast: '', lunch: '', dinner: '' },
-    Friday: { breakfast: '', lunch: '', dinner: '' },
-    Saturday: { breakfast: '', lunch: '', dinner: '' },
-  });
-
-  // Save to localStorage whenever savedRecipes changes
+  // Sync to LocalStorage
   useEffect(() => {
     localStorage.setItem('chavez_saved_recipes', JSON.stringify(savedRecipes));
   }, [savedRecipes]);
 
-  // Online Search API Fetch
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
+    localStorage.setItem('chavez_calendar', JSON.stringify(calendar));
+  }, [calendar]);
 
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(searchQuery)}`);
-        const data = await res.json();
-        setSearchResults(data.meals || []);
-      } catch (err) {
-        console.error('Error fetching recipes:', err);
-      } finally {
-        setLoading(false);
-      }
-    }, 400);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const toggleSaveRecipe = (meal: Meal) => {
-    if (savedRecipes.some((r) => r.idMeal === meal.idMeal)) {
-      setSavedRecipes(savedRecipes.filter((r) => r.idMeal !== meal.idMeal));
-    } else {
-      setSavedRecipes([...savedRecipes, meal]);
-    }
-  };
-
-  const handleAddCustomRecipe = (e: React.FormEvent) => {
+  // Dynamic Online Recipe Fetching via TheMealDB API
+  const handleOnlineSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customName.trim()) return;
-
-    const newRecipe: Meal = {
-      idMeal: `custom-${Date.now()}`,
-      strMeal: customName.trim(),
-      strCategory: customCategory.trim() || 'Custom',
-      ingredients: customIngredients.trim(),
-      strInstructions: customInstructions.trim(),
-      isCustom: true,
-    };
-
-    setSavedRecipes([...savedRecipes, newRecipe]);
-    setCustomName('');
-    setCustomCategory('Custom / Favorite');
-    setCustomIngredients('');
-    setCustomInstructions('');
-    setShowForm(false);
+    if (!searchQuery.trim()) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(searchQuery)}`);
+      const data = await res.json();
+      if (data.meals) {
+        const mapped: Recipe[] = data.meals.map((meal: any) => {
+          const ingredients: string[] = [];
+          for (let i = 1; i <= 20; i++) {
+            const ing = meal[`strIngredient${i}`];
+            const measure = meal[`strMeasure${i}`];
+            if (ing && ing.trim()) {
+              ingredients.push(`${measure ? measure.trim() : ''} ${ing.trim()}`.trim());
+            }
+          }
+          return {
+            id: `mealdb-${meal.idMeal}`,
+            name: meal.strMeal,
+            category: meal.strCategory || 'General',
+            ingredients,
+            instructions: meal.strInstructions,
+          };
+        });
+        setSearchResults(mapped);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (err) {
+      console.error('Error fetching recipes:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleMealChange = (day: string, mealType: 'breakfast' | 'lunch' | 'dinner', value: string) => {
-    setWeeklyPlan((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        [mealType]: value,
-      },
-    }));
+  const saveRecipe = (recipe: Recipe) => {
+    if (!savedRecipes.some((r) => r.id === recipe.id)) {
+      setSavedRecipes([...savedRecipes, recipe]);
+      alert(`Saved "${recipe.name}" to your recipes!`);
+    }
   };
+
+  const updateCalendar = (day: string, mealType: 'breakfast' | 'lunch' | 'dinner', recipeId: string) => {
+    const filtered = calendar.filter((c) => !(c.day === day && c.mealType === mealType));
+    if (recipeId) {
+      setCalendar([...filtered, { day, mealType, recipeId }]);
+    } else {
+      setCalendar(filtered);
+    }
+  };
+
+  // --- AUTOMATED SHOPPING LIST GENERATION ---
+  const generateGroceryList = () => {
+    const list: { ingredient: string; recipeName: string; day: string }[] = [];
+
+    calendar.forEach((entry) => {
+      const recipe = savedRecipes.find((r) => r.id === entry.recipeId);
+      if (recipe) {
+        recipe.ingredients.forEach((ing) => {
+          list.push({
+            ingredient: ing,
+            recipeName: recipe.name,
+            day: entry.day,
+          });
+        });
+      }
+    });
+
+    return list;
+  };
+
+  const groceryItems = generateGroceryList();
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '16px', fontFamily: 'sans-serif', color: '#1e293b' }}>
-      <h1 style={{ textAlign: 'center', color: '#1e3a8a', fontSize: '28px', marginBottom: '20px' }}>Chavez Meal Prep</h1>
-
-      {/* Navigation Tabs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '24px' }}>
-        <button
-          onClick={() => setActiveTab('calendar')}
-          style={{
-            padding: '10px 4px',
-            borderRadius: '6px',
-            border: 'none',
-            fontWeight: 'bold',
-            fontSize: '13px',
-            cursor: 'pointer',
-            backgroundColor: activeTab === 'calendar' ? '#1e3a8a' : '#e2e8f0',
-            color: activeTab === 'calendar' ? '#fff' : '#334155',
-          }}
-        >
-          Calendar
-        </button>
-        <button
-          onClick={() => setActiveTab('search')}
-          style={{
-            padding: '10px 4px',
-            borderRadius: '6px',
-            border: 'none',
-            fontWeight: 'bold',
-            fontSize: '13px',
-            cursor: 'pointer',
-            backgroundColor: activeTab === 'search' ? '#1e3a8a' : '#e2e8f0',
-            color: activeTab === 'search' ? '#fff' : '#334155',
-          }}
-        >
-          Search Online
-        </button>
-        <button
-          onClick={() => setActiveTab('saved')}
-          style={{
-            padding: '10px 4px',
-            borderRadius: '6px',
-            border: 'none',
-            fontWeight: 'bold',
-            fontSize: '13px',
-            cursor: 'pointer',
-            backgroundColor: activeTab === 'saved' ? '#1e3a8a' : '#e2e8f0',
-            color: activeTab === 'saved' ? '#fff' : '#334155',
-          }}
-        >
-          Saved ({savedRecipes.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('shopping')}
-          style={{
-            padding: '10px 4px',
-            borderRadius: '6px',
-            border: 'none',
-            fontWeight: 'bold',
-            fontSize: '13px',
-            cursor: 'pointer',
-            backgroundColor: activeTab === 'shopping' ? '#1e3a8a' : '#e2e8f0',
-            color: activeTab === 'shopping' ? '#fff' : '#334155',
-          }}
-        >
-          Shopping List
-        </button>
-      </div>
-
-      {/* Tab 1: Calendar */}
-      {activeTab === 'calendar' && (
-        <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#1e3a8a' }}>Weekly Planner</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-            {days.map((day) => (
-              <div key={day} style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', backgroundColor: '#f8fafc' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#0f172a', textAlign: 'center' }}>{day}</h3>
-                {(['breakfast', 'lunch', 'dinner'] as const).map((mealType) => (
-                  <div key={mealType} style={{ marginBottom: '8px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', textTransform: 'capitalize', fontWeight: 'bold', marginBottom: '2px' }}>
-                      {mealType}
-                    </label>
-                    <select
-                      value={weeklyPlan[day][mealType]}
-                      onChange={(e) => handleMealChange(day, mealType, e.target.value)}
-                      style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #94a3b8' }}
-                    >
-                      <option value="">-- Select Saved Recipe --</option>
-                      {savedRecipes.map((meal) => (
-                        <option key={meal.idMeal} value={meal.strMeal}>
-                          {meal.strMeal}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Online Recipe Search */}
-      {activeTab === 'search' && (
-        <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '12px', color: '#1e3a8a' }}>Search Internet Recipes</h2>
-          <input
-            type="text"
-            placeholder="Type a meal or ingredient (e.g., Chicken, Pasta, Taco)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid #94a3b8', marginBottom: '16px', boxSizing: 'border-box' }}
-          />
-
-          {loading && <p style={{ color: '#64748b' }}>Searching web database...</p>}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
-            {searchResults.map((meal) => {
-              const isSaved = savedRecipes.some((r) => r.idMeal === meal.idMeal);
-              return (
-                <div key={meal.idMeal} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                  {meal.strMealThumb && (
-                    <img src={meal.strMealThumb} alt={meal.strMeal} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '6px', marginBottom: '8px' }} />
-                  )}
-                  <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{meal.strMeal}</h3>
-                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>{meal.strCategory}</p>
-                  <button
-                    onClick={() => toggleSaveRecipe(meal)}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      backgroundColor: isSaved ? '#ef4444' : '#16a34a',
-                      color: '#fff',
-                    }}
-                  >
-                    {isSaved ? 'Remove Favorite' : 'Save to Favorites'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Tab 3: Saved Favorites & Custom / Pasted Recipes */}
-      {activeTab === 'saved' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '20px', margin: 0, color: '#1e3a8a' }}>Saved Recipes</h2>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                backgroundColor: '#2563eb',
-                color: '#fff',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-              }}
-            >
-              {showForm ? 'Cancel' : '+ Add / Paste Recipe'}
-            </button>
-          </div>
-
-          {showForm && (
-            <form onSubmit={handleAddCustomRecipe} style={{ border: '1px solid #cbd5e1', padding: '16px', borderRadius: '8px', backgroundColor: '#f1f5f9', marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', color: '#1e3a8a' }}>Add Custom or Pasted Recipe</h3>
-              
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Recipe Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Smoker Brisket or Green Chile Stew"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #94a3b8', boxSizing: 'border-box' }}
-                  required
-                />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Category</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Dinner, Breakfast, Smoker"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #94a3b8', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Paste Ingredients</label>
-                <textarea
-                  rows={3}
-                  placeholder="Paste ingredients list here..."
-                  value={customIngredients}
-                  onChange={(e) => setCustomIngredients(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #94a3b8', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Paste Instructions / Steps</label>
-                <textarea
-                  rows={4}
-                  placeholder="Paste directions, prep steps, or cook details here..."
-                  value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #94a3b8', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                />
-              </div>
-
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <header className="text-center space-y-4">
+          <h1 className="text-3xl font-extrabold text-blue-400">Chavez Meal Prep</h1>
+          <nav className="flex justify-center gap-2 border-b border-slate-800 pb-4">
+            {(['calendar', 'search', 'saved', 'shopping'] as const).map((tab) => (
               <button
-                type="submit"
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#16a34a', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-xs md:text-sm font-bold rounded-xl capitalize transition ${
+                  activeTab === tab ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                }`}
               >
-                Save Recipe
+                {tab === 'shopping' ? `Shopping List (${groceryItems.length})` : tab}
               </button>
-            </form>
-          )}
+            ))}
+          </nav>
+        </header>
 
-          {savedRecipes.length === 0 ? (
-            <p style={{ color: '#64748b' }}>No saved recipes yet. Add/paste a custom recipe above or search online!</p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-              {savedRecipes.map((meal) => (
-                <div key={meal.idMeal} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    {meal.strMealThumb ? (
-                      <img src={meal.strMealThumb} alt={meal.strMeal} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '6px', marginBottom: '8px' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '80px', backgroundColor: '#e2e8f0', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', color: '#64748b', fontWeight: 'bold' }}>
-                        {meal.isCustom ? 'Custom Recipe' : 'Saved Recipe'}
-                      </div>
-                    )}
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '16px' }}>{meal.strMeal}</h3>
-                    <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b' }}>{meal.strCategory}</p>
-
-                    {meal.ingredients && (
-                      <div style={{ marginBottom: '8px', fontSize: '13px', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '4px' }}>
-                        <strong>Ingredients:</strong>
-                        <p style={{ margin: '4px 0 0 0', whiteSpace: 'pre-wrap', color: '#334155' }}>{meal.ingredients}</p>
-                      </div>
-                    )}
-
-                    {meal.strInstructions && (
-                      <div style={{ marginBottom: '8px', fontSize: '13px', backgroundColor: '#f8fafc', padding: '8px', borderRadius: '4px' }}>
-                        <strong>Instructions:</strong>
-                        <p style={{ margin: '4px 0 0 0', whiteSpace: 'pre-wrap', color: '#334155' }}>{meal.strInstructions}</p>
-                      </div>
-                    )}
+        {/* CALENDAR TAB */}
+        {activeTab === 'calendar' && (
+          <main className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6">
+            <h2 className="text-xl font-bold text-blue-400">Weekly Calendar Schedule</h2>
+            <div className="space-y-4">
+              {DAYS.map((day) => (
+                <div key={day} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                  <h3 className="font-bold text-slate-200">{day}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {MEAL_TYPES.map((type) => {
+                      const entry = calendar.find((c) => c.day === day && c.mealType === type);
+                      return (
+                        <div key={type} className="space-y-1">
+                          <label className="text-xs font-semibold text-slate-400 capitalize">{type}</label>
+                          <select
+                            value={entry?.recipeId || ''}
+                            onChange={(e) => updateCalendar(day, type, e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="">-- No Meal Selected --</option>
+                            {savedRecipes.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
                   </div>
-
-                  <button
-                    onClick={() => toggleSaveRecipe(meal)}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      backgroundColor: '#ef4444',
-                      color: '#fff',
-                      marginTop: '8px',
-                    }}
-                  >
-                    Remove
-                  </button>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </main>
+        )}
 
-      {/* Tab 4: Shopping List */}
-      {activeTab === 'shopping' && (
-        <div>
-          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#1e3a8a' }}>Shopping List</h2>
-          <p style={{ color: '#64748b' }}>Meals currently on your calendar schedule:</p>
-          <ul style={{ paddingLeft: '20px', lineHeight: '1.8' }}>
-            {Object.entries(weeklyPlan).flatMap(([day, meals]) =>
-              Object.entries(meals)
-                .filter(([_, mealName]) => mealName !== '')
-                .map(([type, mealName], idx) => (
-                  <li key={`${day}-${type}-${idx}`}>
-                    <strong>{day} ({type}):</strong> {mealName}
-                  </li>
-                ))
+        {/* ONLINE SEARCH TAB */}
+        {activeTab === 'search' && (
+          <main className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6">
+            <h2 className="text-xl font-bold text-blue-400">Search Live Recipes</h2>
+            <form onSubmit={handleOnlineSearch} className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Search recipes (e.g., Chicken, Pasta, Steak)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+              />
+              <button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 font-bold text-sm text-white rounded-xl transition">
+                {isLoading ? 'Searching...' : 'Search'}
+              </button>
+            </form>
+
+            <div className="space-y-4">
+              {searchResults.map((recipe) => (
+                <div key={recipe.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-slate-100">{recipe.name}</h3>
+                      <span className="text-xs text-blue-400">{recipe.category}</span>
+                    </div>
+                    <button
+                      onClick={() => saveRecipe(recipe)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-blue-300 rounded-lg border border-slate-700"
+                    >
+                      + Save Recipe
+                    </button>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <strong>Ingredients:</strong> {recipe.ingredients.join(', ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </main>
+        )}
+
+        {/* SAVED RECIPES TAB */}
+        {activeTab === 'saved' && (
+          <main className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-4">
+            <h2 className="text-xl font-bold text-blue-400">Saved Recipes ({savedRecipes.length})</h2>
+            <div className="space-y-3">
+              {savedRecipes.map((r) => (
+                <div key={r.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                  <h3 className="font-bold text-slate-200">{r.name}</h3>
+                  <ul className="list-disc list-inside text-xs text-slate-400 space-y-1">
+                    {r.ingredients.map((ing, idx) => (
+                      <li key={idx}>{ing}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </main>
+        )}
+
+        {/* AUTOMATED SHOPPING LIST TAB */}
+        {activeTab === 'shopping' && (
+          <main className="bg-slate-900 p-6 rounded-2xl border border-slate-800 space-y-6">
+            <div className="border-b border-slate-800 pb-4">
+              <h2 className="text-xl font-bold text-blue-400">Weekly Grocery Checklist</h2>
+              <p className="text-xs text-slate-400">Auto-generated from your scheduled calendar meals.</p>
+            </div>
+
+            {groceryItems.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6">Your calendar is empty! Add meals on the Calendar tab to generate your list.</p>
+            ) : (
+              <div className="space-y-3">
+                {groceryItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <input type="checkbox" className="w-5 h-5 accent-blue-500 rounded cursor-pointer" />
+                    <div className="flex-1">
+                      <span className="text-sm font-semibold text-slate-100">{item.ingredient}</span>
+                      <div className="text-[11px] text-slate-500">For {item.recipeName} ({item.day})</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
-          </ul>
-        </div>
-      )}
+          </main>
+        )}
+      </div>
     </div>
   );
 }
