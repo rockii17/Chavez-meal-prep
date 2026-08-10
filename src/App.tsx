@@ -86,7 +86,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error fetching recipes:', err);
-    } fontally {
+    } finally {
       setIsLoading(false);
     }
   };
