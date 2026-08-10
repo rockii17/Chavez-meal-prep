@@ -21,7 +21,7 @@ const MEAL_TYPES: ('breakfast' | 'lunch' | 'dinner')[] = ['breakfast', 'lunch', 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'calendar' | 'search' | 'add' | 'saved' | 'shopping'>('calendar');
   
-  // Storage
+  // Storage State
   const [savedRecipes, setSavedRecipes] = useState<Recipe[]>(() => {
     const saved = localStorage.getItem('chavez_saved_recipes');
     return saved ? JSON.parse(saved) : [
@@ -86,7 +86,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error fetching recipes:', err);
-    } finally {
+    } fontally {
       setIsLoading(false);
     }
   };
@@ -124,6 +124,13 @@ export default function App() {
     }
   };
 
+  const deleteRecipe = (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete "${name}"?`)) {
+      setSavedRecipes(savedRecipes.filter((r) => r.id !== id));
+      setCalendar(calendar.filter((c) => c.recipeId !== id));
+    }
+  };
+
   const updateCalendar = (day: string, mealType: 'breakfast' | 'lunch' | 'dinner', recipeId: string) => {
     const filtered = calendar.filter((c) => !(c.day === day && c.mealType === mealType));
     if (recipeId) {
@@ -138,7 +145,7 @@ export default function App() {
     const list: { ingredient: string; recipeName: string; day: string }[] = [];
     calendar.forEach((entry) => {
       const recipe = savedRecipes.find((r) => r.id === entry.recipeId);
-      if (recipe) {
+      if (recipe && Array.isArray(recipe.ingredients)) {
         recipe.ingredients.forEach((ing) => {
           list.push({
             ingredient: ing,
@@ -157,7 +164,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         
-        {/* Header with Vibrant Gradients */}
+        {/* Header */}
         <header className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 rounded-3xl border border-indigo-500/30 shadow-2xl text-center space-y-4">
           <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 bg-clip-text text-transparent drop-shadow-md">
             Chavez Meal Prep
@@ -233,7 +240,7 @@ export default function App() {
           <main className="bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-purple-500/30 shadow-xl space-y-6">
             <div className="border-b border-slate-800 pb-3">
               <h2 className="text-xl font-black text-purple-400">Add Your Own Recipe</h2>
-              <p className="text-xs text-slate-400">Type in your custom recipes, meal prep batches, or family favorites.</p>
+              <p className="text-xs text-slate-400">Type in custom recipes, meal prep batches, or family favorites.</p>
             </div>
 
             <form onSubmit={handleAddCustomRecipe} className="space-y-4">
@@ -242,7 +249,7 @@ export default function App() {
                   <label className="text-xs font-bold text-slate-300">Recipe Name</label>
                   <input
                     type="text"
-                    placeholder="e.g., Homemade Protein Shake, Flank Steak Marinade..."
+                    placeholder="e.g., Breakfast Potatoes, Chicken Salad..."
                     value={customName}
                     onChange={(e) => setCustomName(e.target.value)}
                     required
@@ -268,7 +275,7 @@ export default function App() {
                 <label className="text-xs font-bold text-slate-300">Ingredients (One item per line)</label>
                 <textarea
                   rows={4}
-                  placeholder="2 lbs Chicken Breast&#10;1 tbsp Olive Oil&#10;1 tsp Salt..."
+                  placeholder="4 Russet Potatoes&#10;1 Bell Pepper&#10;1/2 Onion..."
                   value={customIngredients}
                   onChange={(e) => setCustomIngredients(e.target.value)}
                   required
@@ -280,7 +287,7 @@ export default function App() {
                 <label className="text-xs font-bold text-slate-300">Instructions / Notes (Optional)</label>
                 <textarea
                   rows={3}
-                  placeholder="Bake at 375°F for 25 minutes..."
+                  placeholder="Dice potatoes, sauté with peppers..."
                   value={customInstructions}
                   onChange={(e) => setCustomInstructions(e.target.value)}
                   className="w-full bg-slate-950 border border-purple-500/40 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-purple-400"
@@ -304,7 +311,7 @@ export default function App() {
             <form onSubmit={handleOnlineSearch} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Search meals (e.g. Chicken, Beef, Egg, Rice)..."
+                placeholder="Search meals (e.g. Chicken, Beef, Pasta, Rice)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="flex-1 bg-slate-950 border border-blue-500/40 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-400"
@@ -338,29 +345,36 @@ export default function App() {
           </main>
         )}
 
-         {/* SAVED RECIPES TAB */}
-         {activeTab === 'saved' && (
+        {/* SAVED RECIPES TAB */}
+        {activeTab === 'saved' && (
           <main className="bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-amber-500/30 shadow-xl space-y-4">
             <h2 className="text-xl font-black text-amber-400">Saved Recipe Library</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {savedRecipes.map((r) => (
                 <div key={r.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                    <h3 className="font-bold text-amber-300 text-sm">{r.name}</h3>
-                    <span className="text-[10px] bg-amber-950 text-amber-400 font-bold px-2 py-0.5 rounded-md border border-amber-500/30">
-                      {r.category || 'General'}
-                    </span>
+                    <div>
+                      <h3 className="font-bold text-amber-300 text-sm">{r.name}</h3>
+                      <span className="text-[10px] bg-amber-950 text-amber-400 font-bold px-2 py-0.5 rounded-md border border-amber-500/30">
+                        {r.category || 'General'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => deleteRecipe(r.id, r.name)}
+                      className="px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-[11px] font-bold text-rose-300 rounded-lg border border-rose-500/40 transition"
+                    >
+                      🗑️ Delete
+                    </button>
                   </div>
-                  
-                  {/* Added fallback here to prevent crashes if ingredients are missing */}
+
                   <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
-                    {Array.isArray(r.ingredients) ? r.ingredients.map((ing, idx) => (
-                      <li key={idx}>{ing}</li>
-                    )) : (
+                    {Array.isArray(r.ingredients) ? (
+                      r.ingredients.map((ing, idx) => <li key={idx}>{ing}</li>)
+                    ) : (
                       <li className="text-slate-500 italic">No ingredients listed</li>
                     )}
                   </ul>
-                  
+
                   {r.instructions && (
                     <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-900">{r.instructions}</p>
                   )}
