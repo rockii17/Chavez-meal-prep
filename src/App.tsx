@@ -338,8 +338,8 @@ export default function App() {
           </main>
         )}
 
-        {/* SAVED RECIPES TAB */}
-        {activeTab === 'saved' && (
+         {/* SAVED RECIPES TAB */}
+         {activeTab === 'saved' && (
           <main className="bg-slate-900/80 backdrop-blur-md p-6 rounded-3xl border border-amber-500/30 shadow-xl space-y-4">
             <h2 className="text-xl font-black text-amber-400">Saved Recipe Library</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -348,14 +348,19 @@ export default function App() {
                   <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                     <h3 className="font-bold text-amber-300 text-sm">{r.name}</h3>
                     <span className="text-[10px] bg-amber-950 text-amber-400 font-bold px-2 py-0.5 rounded-md border border-amber-500/30">
-                      {r.category}
+                      {r.category || 'General'}
                     </span>
                   </div>
+                  
+                  {/* Added fallback here to prevent crashes if ingredients are missing */}
                   <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
-                    {r.ingredients.map((ing, idx) => (
+                    {Array.isArray(r.ingredients) ? r.ingredients.map((ing, idx) => (
                       <li key={idx}>{ing}</li>
-                    ))}
+                    )) : (
+                      <li className="text-slate-500 italic">No ingredients listed</li>
+                    )}
                   </ul>
+                  
                   {r.instructions && (
                     <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-900">{r.instructions}</p>
                   )}
